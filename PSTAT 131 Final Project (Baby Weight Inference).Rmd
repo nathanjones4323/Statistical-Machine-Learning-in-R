@@ -1,0 +1,1271 @@
+---
+title: "Machine Learning Analysis of Baby Weights"
+author: Kelsey Scott 3930955, Sarah Tappin 3646452, Talha Ardic 5657697, Nathan Jones
+  4372504
+date: "3/11/2020"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Abstract 
+
+This report is intended to explore which risk factors contribute most to babies being born under or overweight in the United States in 2018. In particular, we were interested in using these factors to predict birth weight. The following research questions are of interest to us: Could machine learning be used in predicting the birth weight of babies? Which attributes affect baby weight the most? What is considered a healthy birth weight? This exploration is important because baby weight is strongly correlated with mortality risk within the first year of life, possible childhood developmental problems, and risk of various diseases in adulthood. Our purpose is therefore prediction of baby weights to identify any health risks early on.  
+
+# The Data
+
+We are using the US Births 2018 Data Set, available through Kaggle (https://www.kaggle.com/des137/us-births-2018). The creator is Amol Deshmukh, a Data Scientist in Philadelphia, PA. He created this particular dataset and his source was The National Center for Health Statistics (CDC/National Center for Health Statistics). Kaggle’s terms of use state that if the user has made a valid account, is of age, and only uses “the Services for your own internal, personal, non-commercial use, and not on behalf of or for the benefit of any third party, and only in a manner that complies with all laws that apply to you,” then the data is accessible. More can be found on the citation policy on https://www.kaggle.com/terms.  
+
+# Data Preprocessing 
+
+```{r, include=FALSE}
+#read in the data
+births1 <- read.csv("US_births.csv")
+```
+
+```{r, include=FALSE}
+set.seed(3)
+#crop data set
+birthIDs <- sample(1:nrow(births1), 0.01*nrow(births1))
+myBirths<- births1[birthIDs, ]
+dim(myBirths)
+myBirths<- myBirths[-c(17:19)]
+myBirths<-myBirths[-c(1:2)]
+myBirths<-myBirths[-c(6:10)]
+myBirths<-myBirths[-c(23:27)]
+myBirths<-myBirths[-c(27:28,31:33)]
+myBirths<-myBirths[-c(4:5,7:8,10:20)]
+myBirths<-myBirths[-c(10,15:18)]
+myBirths<-myBirths[-c(5:6)]
+```  
+
+```{r,include=FALSE}
+dim(births1)
+dim(myBirths)
+any(is.na(myBirths))
+``` 
+
+The original data set had had 55 attributes and 3,801,534 observations, which is incredibly large. To avoid the curse of dimensionality, we decided to reduce this. Based on intuition, we only kept predictors that would work best for our analysis plan, appeared most interesting, and were the cleanest. This left us with 12 predictor variables and 1 response variable. We also decided to sample from our data to reduce the number of observations for the sake of efficiency. We were then left with 38,015 total observations, with no missing data.   
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+#Create a copy of the dataset so we can manipulate variables
+births <- myBirths
+
+#convert some variables to binary ==> Make binary factors instead of default data type
+births$SEX<-ifelse(births$SEX=='M',0,1)
+births$MM_AICU<-ifelse(births$MM_AICU=='N',0,1)
+births$CIG_0<-ifelse(births$CIG_0==0, 0, 1)
+births$NO_INFEC<-ifelse(births$NO_INFEC==0, 0, 1)
+births$NO_RISKS<-ifelse(births$NO_RISKS==0, 0, 1)
+
+#PRECARE: change 99 to 0
+for(i in 1:nrow(births)){
+  if (births$PRECARE[i]==99){
+  (births$PRECARE[i]=0)
+  }
+}
+
+library(dplyr)
+births <- births %>%
+mutate(HL=as.factor(ifelse(DBWT>=2960, "Yes", "No"))) 
+```
+
+```{r, echo=FALSE}
+glimpse(births)
+```
+
+Our response variable is baby weight (DBWT). Baby weight is a numerical variable measured in grams that ranges from 227-9999 grams. We changed this variable to be binary (healthy or underweight) for the sake of classification. To do this, we used the first quantile to find a range of what healthy would be. We decided that under 2,960 grams would be underweight (HL=no). Anything else we classified as healthy (HL=yes).     
+
+We were then left with the following 12 covariates after removing irrelevant attributes:  
+
+**BMI:** BMI of mother; numeric    
+
+**CIG_0:** Smoked Cigarettes Before Pregnancy; binary (0=No, 1=Yes)    
+
+**DWgt_R:** Delivery weight of mother (in pounds); numeric   
+
+**MM_AICU:** Admitted to ICU; binary (0=No, 1=Yes)  
+
+**M_Ht_In:** Mother’s height (in inches); numeric  
+
+**NO_INFEC:** No infections reported; binary (0=Infection, 1=No infection)  
+
+**NO_RISKS:** No risk factors reported; binary (0=Risk, 1=No Risk)  
+
+**PRECARE:** Month in which pregnancy prenatal care began; numeric (0=No Prenatal care)    
+**PREVIS:** Number of Prenatal visits; numeric  
+
+**PWgt_R:** Pre-Pregnancy weight (in pounds); numeric  
+
+**SEX:** Gender of baby; binary (0=Female, 1=Male)  
+
+**WTGAIN:** Weight gained by mother during pregnancy (in pounds); numeric    
+
+Note that we have 7 numeric and 5 binary variables. We converted the covariates CIG_0, MM_AICU, NO_INFEC, NO_RISKS, and SEX to binary variables from continuous values because this made more sense for interpretations of the variables and our analysis.      
+
+# Exploratory Data Analysis
+
+```{r, include=FALSE}
+#pairs plot
+#pairs(births)
+```
+
+To begin the exploratory data analysis, we attempted to create a pairs plot to reveal any initial relationships between variables. Because this is such a large data set with lots of observations and several attributes (even after our reduction), we were not able to get a meaningful plot. We therefore proceeded to conduct other graphical and numerical analyses to explore our variables.  
+
+```{r, echo=FALSE}
+#summary statistics
+summary(births)
+```
+
+In order to explore and summarize primary characteristics of each variable, we completed 5 number summaries on each of the predictors. We explored central tendencies with mean and median. Maximum and minimum values helped reveal any potential outliers, and the quartile measurements paired with standard deviation revealed general spread and variation of the data. It appears that BMI, DBWT, DWgt_R, M_Ht_In, PREVIS, PWgt_R, and WTGAIN have some outliers because the maximum values are unrealistically high. It doesn't look like these large outliers affect the spread however because the quartiles are as expected. For the response, we looked at proportions of observations in each category. There are way more observations in the healthy category than unhealthy, so if we run into problems in our analysis this may be why.  
+
+To further explore the spread of our predictors, we looked at histograms of each continuous variable. Histograms help reveal frequencies of each continuous predictor and help us identify any outliers or skewness.  
+
+```{r, echo=FALSE}
+#histograms
+par(mfrow=c(3,3))
+
+hist(`births`$BMI)
+hist(`births`$DWgt_R)
+hist(`births`$M_Ht_In)
+hist(`births`$PRECARE)
+hist(`births`$PREVIS)
+hist(`births`$PWgt_R)
+hist(`births`$WTGAIN)
+```
+Most variables here look right-skewed and the only variable that appears normal is weight gain of the mother. Weight gain also appears to have high outliers.  
+
+We next conducted boxplots on all of the variables because our response is categorical and boxplots are a useful way to explore comparisons across different variables and identify outliers.    
+
+```{r, include=FALSE}
+#boxplots
+births.boxplot <- births[-c(3)]
+boxplot(`births.boxplot`, main="Boxplots for all Variables")
+```
+
+We have several binary predictors in our data set, so these boxplots do not reveal much because these variables can only assume two values. We therefore perfomed individual boxplots on each continuous predictor instead.  
+
+```{r, echo=FALSE}
+par(mfrow=c(1,4))
+
+boxplot(DWgt_R ~ HL, data = births.boxplot, ylab="Delivery Weight of Mother (pounds)",
+xlab="Healthy Baby Weight", main = "Delivery Weight")
+
+boxplot(BMI ~ HL, data = births.boxplot, ylab="BMI of Mother",
+xlab="Healthy Baby Weight", main = "BMI")
+
+boxplot(M_Ht_In ~ HL, data = births.boxplot, ylab="Mother’s height (in inches)",
+xlab="Healthy Baby Weight", main = "Mother’s Height")
+
+boxplot(PRECARE ~ HL, data = births.boxplot, ylab="Month in pregnancy prenatal care began",
+xlab="Healthy Baby Weight", main = "Prenatal Care")
+
+```
+
+```{r, echo=FALSE}
+par(mfrow=c(1,3))
+boxplot(PREVIS ~ HL, data = births.boxplot, ylab="Number of Prenatal visits",
+xlab="Healthy Baby Weight", main = "Prenatal visits")
+
+boxplot(PWgt_R ~ HL, data = births.boxplot, ylab="Pre-Pregnancy Weight of Mother (pounds)",
+xlab="Healthy Baby Weight", main = "Pre-Pregnancy Weight")
+
+boxplot(WTGAIN ~ HL, data = births.boxplot, ylab="Weight gained by mother during pregnancy (in pounds)",
+xlab="Healthy Baby Weight", main = "Weight Gain")
+```
+
+The boxplots do not reveal any predictor that really stands out as having a significant effect whether or not a baby is born a healthy weight. Weight gain of mother is the one that looks most different if we had to pick one that appears most significant.    
+
+# Analysis   
+
+We performed supervised learning on this data set. We fit three models using different analyses techniques: KNN classification, logistic regression, and ensemble learning including random forests, bagging, and boosting. We compared the performance of each by comparing misclassification error rates on the test sets.  
+
+
+## K-Nearest Neighbors Classification 
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+#Load libraries required for KNN
+library(ISLR)
+library(ggplot2)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(class)
+```
+
+Our goal with the K-Neartest Neighbors analysis was to investigate the relationship between birth weight and all continuous explanatory variables. Note that KNN doesn't handle categorical features so we removed the categorical features before proceeding.  
+
+```{r, include=FALSE}
+#remove categorical variables 
+knn.births <- births %>%
+  select(-DBWT, -MM_AICU, -CIG_0, -SEX, -NO_INFEC, -NO_RISKS)
+
+colnames(knn.births)
+```
+
+```{r, include=FALSE}
+#create train and test sets for KNN for dataset without categorical variables
+set.seed(3)
+train <- sample(1:nrow(knn.births), .75*nrow(knn.births))
+knn.train <- knn.births[train,]
+knn.test <- knn.births[-train,]
+
+#view dimensions of testing and training sets
+dim(knn.train)
+dim(knn.test)
+```
+
+The training set has 75% of our data, or 28,511 observations, and the testing set has the remaining 9,504 observations. Once we created our testing and training sets, we created response vectors from the sets (YTrain, YTest) and design matrices (XTrain, XTest).  
+
+```{r, include=FALSE}
+#YTrain are observed labels for HL on training set
+YTrain <- knn.train$HL
+XTrain <- knn.train %>% select(-HL)
+
+#XTrain is design matrix
+XTrain <- scale(XTrain, center= TRUE, scale= TRUE)
+```
+
+```{r,include=FALSE}
+#Create meanvec and sdvec to make YTest and XTest
+meanvec <- attr(XTrain, 'scaled:center')
+sdvec <- attr(XTrain, 'scaled:scale')
+YTest <- knn.test$HL
+XTest <- knn.test %>% select(-HL) %>% scale(center= meanvec, scale= sdvec)
+```
+
+We next trained the KNN classifier with 2, 5, and 10 neighbors and compared which had the lowest test error rate. We chose these values because they are common K's that tend to optimize the bias-variance tradeoff.  
+
+```{r,include=FALSE}
+# k=2
+set.seed(3)
+
+# Train classifier and make predictions on the TRAINING set (k=2)
+pred.YTrain2 <- knn(train=XTrain, test= XTrain, cl= YTrain, k=2)
+
+# Calculate the confusion matrix
+conf.train2 <- table(predicted= pred.YTrain2, observed= YTrain)
+conf.train2
+
+# Train accuarcy rate
+accuracy.train2 <- sum(diag(conf.train2)/sum(conf.train2))
+
+# Train error rate
+train.error.knn2 <- 1-accuracy.train2
+```
+
+```{r,include=FALSE}
+#k=5
+set.seed(3)
+
+# Train classifier and make predictions on the TRAINING set (k=5)
+pred.YTrain5 <- knn(train=XTrain, test= XTrain, cl= YTrain, k=5)
+
+# Calculate the confusion matrix
+conf.train5 <- table(predicted= pred.YTrain5, observed= YTrain)
+
+# Train accuarcy rate
+accuracy.train5 <- sum(diag(conf.train5)/sum(conf.train5))
+
+# Train error rate
+train.error.knn5 <- 1-accuracy.train5
+```
+
+```{r,include=FALSE}
+#k=10
+set.seed(3)
+
+# Train classifier and make predictions on the TRAINING set (k=10)
+pred.YTrain10= knn(train=XTrain, test= XTrain, cl= YTrain, k=10)
+
+# Calculate the confusion matrix
+conf.train10 <- table(predicted= pred.YTrain10, observed= YTrain)
+
+# Train accuarcy rate
+accuracy.train10 <- sum(diag(conf.train10)/sum(conf.train10))
+
+# Train error rate
+train.error.knn10 <- 1-accuracy.train10
+```
+
+The training error for k=2 is `r train.error.knn2`, for k=5 it's `r train.error.knn5`, and for k=10 it's `r train.error.knn10`. Once we trained the KNN models, we fit the test sets to each model and calculated the test error rates. This is what we used to quantify the success of our models because it shows if our results are reproducible and if the model fits to other data sets well.      
+
+```{r, include=FALSE}
+#k=2
+set.seed(3)
+
+# train the classifier on TRAINING set and make predictions on the TEST set
+pred.YTest2 <- knn(train= XTrain, test= XTest, cl= YTrain, k=2)
+
+# Confusion Matrix
+conf.test2 <- table(predicted= pred.YTest2, observed= YTest)
+
+# Test accuracy rate 
+accuracy.test2 <- sum(diag(conf.test2)/sum(conf.test2))
+
+# Test error rate
+test.error.knn2 <- 1-accuracy.test2
+```
+
+```{r, include=FALSE}
+#k=5
+set.seed(3)
+
+# train the classifier on TRAINING set and make predictions on the TEST set
+pred.YTest5 <- knn(train= XTrain, test= XTest, cl= YTrain, k=5)
+
+# Confusion Matrix
+conf.test5 <- table(predicted= pred.YTest5, observed= YTest)
+
+# Test accuracy rate 
+accuracy.test5 <- sum(diag(conf.test5)/sum(conf.test5))
+
+# Test error rate
+test.error.knn5 <- 1-accuracy.test5
+```
+
+```{r, include=FALSE}
+#k=10
+set.seed(3)
+
+# train the classifier on TRAINING set and make predictions on the TEST set
+pred.YTest10 <- knn(train= XTrain, test= XTest, cl= YTrain, k=10)
+
+# Confusion Matrix
+conf.test10 <- table(predicted= pred.YTest10, observed= YTest)
+
+# Test accuracy rate 
+accuracy.test10 <- sum(diag(conf.test10)/sum(conf.test10))
+
+# Test error rate
+test.error.knn10 <- 1-accuracy.test10
+```
+
+The test error for our KNN model with K=2 neighbors is `r test.error.knn2`, for K=5 `r test.error.knn5`, and for K=10 it's `r test.error.knn10`.    
+
+The best K to use out of these 3 options was K=2 because it yielded the lowest misclassification error rate. We next wanted to see if we could improve these error rates, so we used leave one out cross validation to see if there was a value of K that's more optimal.  
+
+```{r, include=FALSE}
+validation.error <- NULL
+allK <- 1:50
+set.seed(3)
+
+# for each number in allK, use LOOCV to find a validation error
+for (i in allK){
+  pred.Yval <- knn.cv(train= XTrain, cl= YTrain, k=i) # predict on the left-out validation set
+  validation.error <- c(validation.error, mean(pred.Yval!=YTrain))
+}
+
+#Best number of neighbors (if there is a tie, use larger number of neighbors for a simpler model)
+numneighbor <- max(allK[validation.error == min(validation.error)])
+```
+
+Leave one out cross validation told us that the best value of K is `r numneighbor` neighbors. We then tested if this test error is in fact better than the other models with other values of K.      
+
+```{r, include=FALSE}
+set.seed(3)
+# using best k
+
+#TRAINING error
+pred.YTrain41 <- knn(train=XTrain, test= XTrain, cl= YTrain, k=numneighbor)
+# confusion matrix
+conf.train41 <- table(predicted= pred.YTrain41, true= YTrain)
+# test accuracy rate
+accuracy.train41 <- sum(diag(conf.train41)/sum(conf.train41))
+# Test error rate
+train.error41 <- 1-accuracy.train41
+
+
+#TESTING error
+pred.YTest41 <- knn(train=XTrain, test= XTest, cl= YTrain, k=numneighbor)
+# confusion matrix
+conf.test41 <- table(predicted= pred.YTest41, true= YTest)
+# test accuracy rate
+accuracy.test41 <- sum(diag(conf.test41)/sum(conf.test41))
+
+# Hardcoded result from above
+test.error4 <- 0.242579966329966
+# Test error rate
+test.error41 <- 1-accuracy.test41
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+table <- matrix(c("2", train.error.knn2, test.error.knn2, 
+                  "5", train.error.knn5, test.error.knn5, 
+                  "10", train.error.knn10, test.error.knn10, 
+                  numneighbor, train.error41, test.error41),
+                  ncol=3,byrow=TRUE)
+colnames(table) <- c("Number of Neighbors","Training MSE","Testing MSE")
+rownames(table) <- c(1:4)
+table2 <- as.table(table)
+library(knitr)
+kable(table2, caption="Table of MSEs for Train and Test Sets")
+```
+
+The model with 2 neighbors gave us the lowest training error, but we were interested in test error rate because a low training error may just be an indication of overfitting the training data. We therefore prefer the model with K=`r numneighbor` because it yielded the lowest misclassification error rate on the test set, at `r test.error41`. This makes sense because the purpose of leave one out cross validation is to determine the optimal K.  
+
+We next fit a logistic regression model to see if we could get an even lower test error rate, and also to help determine which predictors have the most impact on baby weight.  
+
+## Logistic Regression
+
+Logistic regression is a useful tool to determine variable importance, which is useful to our analysis because we are investigating which attributes have the largest impact on whether or not babies are born a healthy weight. To fit the logistic regression model on all the variables, we removed DBWT since our response (HL) has already been derived from the DBWT variable. We are therefore left with (an equation that is attached to this report due to unsolvable knitting errors).    
+
+```{r, include=FALSE}
+set.seed(3)
+#convert binary variables to factors
+births.lr <- births
+births.lr$MM_AICU <- as.factor(births.lr$MM_AICU)
+births.lr$SEX<-as.factor(ifelse(births$SEX==0,"F","M"))
+
+#create testing and training sets 
+trainID<-sample(1:nrow(births.lr),.75*nrow(births.lr))
+births.train.lr<-births.lr[trainID,]
+births.test.lr<-births.lr[-trainID,]
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#install.packages("ROCR")
+library(ROCR)
+set.seed(3)
+
+#fit logistic regression model; make family=binomial
+glm.fit <- glm(HL~. -DBWT, data= births.train.lr, family= binomial)
+
+# summarize the model
+summary(glm.fit)
+```
+
+Based on p-values, it appears that every variable is significant except for PREVIS and DWgt_R.     
+
+For a one unit increase in each of these variables (besides SEX and MM_AICU), the log-odds of having a healthy weight baby increases by $\hat\beta_p$ for each of the p variables, when holding other variables fixed. For example, for a one unit increase in BMI of the mother, the log-odds of having a baby born a healthy weight increases by 0.0324510.    
+
+The variables SEX and MM_AICU have slightly different interpretations however because they are factors. For example, for MM_AICU, the indicator variable MM_AICU=1 (has been admitted to the ICU) has a coefficient of -0.6696933, meaning that if a baby has been admitted to the ICU, the log-odds of them being a healthy weight decreases by 0.6696933.   
+
+```{r, include=FALSE}
+set.seed(3)
+# estimated healthy/unhealthy weight probabilities
+prob.training <- predict(glm.fit, type= "response")
+round(prob.training, digits=2)
+```
+
+We next produced an ROC curve by plotting the true positive rate (TPR) against the false positive rate (FPR). Classifiers that give curves closer to the top-left corner indicate better performance. The diagonal FPR=TPR is the baseline to compare to, and the closer our curve comes to this diagonal, the less accurate our model is.  
+
+```{r, echo=FALSE}
+set.seed(3)
+# First arument is the prob.training, second is true labels
+lr.pred <- prediction(prob.training, births.train.lr$HL)
+
+# We want TPR on the y axis and FPR on the x axis
+perf <- performance(lr.pred, measure="tpr", x.measure="fpr")
+
+# Lastly, plot the object you obtained above, and you will have the ROC curve
+plot(perf, col=2, lwd=3, main="ROC curve")
+abline(0,1)
+```
+
+Our curve falls very close to the diagonal, meaning our model is not very accurate.   
+
+```{r, include=FALSE}
+# Calculate AUC
+auc <- performance(lr.pred, "auc")@y.values
+```
+
+In addition, the area under under the curve  was `r auc`. This is a measure of how well parameters can distinguish between the unhealthy and healthy baby weights. Since our AUC is kind of close to 0.5, this indicates that it does not separate between healthy and unhealthy weights incredibly well.   
+
+We next wished to construct the confusion matrix for the training data. The true labels of HL (either NO or YES) were available in the dataset, but to obtain the predicted labels, we had to choose a threshold value to assign the labels.    
+
+```{r, include=FALSE}
+# Next to determine the best threshold value
+# FPR
+fpr <- performance(lr.pred, "fpr")@y.values[[1]]
+cutoff <- performance(lr.pred, "fpr")@x.values[[1]]
+
+# FNR
+fnr <- performance(lr.pred,"fnr")@y.values[[1]]
+
+# Plot
+matplot(cutoff, cbind(fpr,fnr), type="l",lwd=2, xlab="Threshold",ylab="Error Rate")
+# Add legend to the plot
+legend(0.3, 1, legend=c("False Positive Rate","False Negative Rate"),
+col=c(1,2), lty=c(1,2))
+```
+
+```{r, echo=FALSE}
+# Calculate the euclidean distance between FPR and FNR
+rate <- as.data.frame(cbind(Cutoff=cutoff, FPR=fpr, FNR=fnr))
+rate$distance <- sqrt((rate[,2])^2+(rate[,3])^2)
+
+# Select p-threshold with the smallest euclidean distance
+index <- which.min(rate$distance)
+best <- rate$Cutoff[index]
+
+# Graph of selected p-threshold
+matplot(cutoff, cbind(fpr,fnr), type="l",lwd=2, xlab="Threshold",ylab="Error Rate")
+# Add legend to the plot
+legend(0.35, 1, legend=c("False Positive Rate","False Negative Rate"),
+col=c(1,2), lty=c(1,2))
+# Add the best value
+abline(v=best, col=3, lty=3, lwd=3)
+```
+
+The green line represents the best value, which means that the HL probabilities greater than `r best` should be predicted as yes, which represents a healthy weight.  
+
+```{r, echo=FALSE}
+set.seed(3)
+births.train.lr <- births.train.lr %>%
+  mutate(predHL= as.factor(ifelse(prob.training<= best, "No", "Yes")))
+
+# Confusion Matrix (training error/accuracy)
+lr.conf.matrix <- table(pred=births.train.lr$predHL, true=births.train.lr$HL)
+lr.conf.matrix
+
+#accuracy rate
+lr.accuracy <- sum(diag(lr.conf.matrix ))/sum(lr.conf.matrix)
+
+#error rate
+lr.error <- 1-lr.accuracy
+
+#total calssified correctly
+total <- ((12614+4284)/(4284+8685+2928+12614))*100
+
+#unhealthy classified correctly
+unhealthy <- ((4284)/(4284+2928))*100
+  
+#healthy classified correctly
+healthy <- (12614/(8685+12614))*100
+```
+This table revealed as follows:  
+
+`r total`% total cases were correctly classified  
+`r healthy`% healthy cases were correctly classified  
+`r unhealthy`% of unhealthy cases correctly classified  
+The test error rate is therefore `r lr.error`.   
+
+These rates of correct classification are not as high as we saw in our KNN classificaiton. We had uneven separation between numbers of observations that were deemed healthy vs unhealthy, so this could have contributed to the higher error rates.  
+
+## Ensemble Methods
+
+### Random Forests  
+We next decided to perform ensemble learning on the baby weight data. Ensemble methods often yield better predictive performance because they combine the results from multiple models, so we thought this may potentially yield lower test error rates than our non-ensemble methods did.  
+
+Our first ensemble method we used was random forests.   
+We wanted each tree to only use a subset of the predictors in order to decorrelate the trees. Our m therefore equaled the square root of p.  
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+library(randomForest)
+set.seed(3)
+#create testing and training sets 
+trainID<-sample(1:nrow(births),.75*nrow(births))
+births.train2<-births[trainID,]
+births.test2<-births[-trainID,]
+```
+
+```{r, echo=FALSE}
+set.seed(3)
+#fit the forest with m=sqrt(p) 
+fitrf<-randomForest(HL~.-DBWT, data=births.train2,mtry=sqrt(12),ntree=500,importance=TRUE)
+fitrf
+```
+
+```{r, echo=FALSE}
+set.seed(3)
+plot(fitrf, main="Random Forests for Births")
+legend("topright", colnames(fitrf$err.rate),col=1:4,cex=0.8,fill=1:4)
+```
+
+```{r, include=FALSE}
+#fit on test set
+yhat.rf <- predict(fitrf, newdata = births.test2)
+
+# Confusion matrix
+rf.err <- table(pred = yhat.rf, truth = births.test2$HL)
+
+#test error rate
+test.rf.err <- 1 - sum(diag(rf.err))/sum(rf.err)
+```
+The test error rate for the random forest model was `r test.rf.err`. This is consistent with the levels of test error rates we've been getting with other models.    
+
+We then created a variable importance plot to determine which predictors were having the largest impact on baby weight.  
+
+```{r, echo=FALSE}
+importance(fitrf)
+varImpPlot(fitrf, main= "Variable Importance for Births Random Forest")
+#varImpPlot(fitrf, sort=T, main="Top 5 Variable Importance for Births Random Forest", n.var=5)
+```
+
+We can see from the results that across all of the trees considered in the random forest, the delivery weight of the mother is the most important variable in terms of both Model Accuracy and Gini index. Other significant predictors included mother's BMI, weight gain of the mother after getting pregnant, and pregnancy weight of mother. All four of these  variables have to do with the mother's weight, which makes sense because that would intuitively have a large impact on whether or not her baby is underweight at birth.  
+
+### Bagging  
+We chose to next conduct bagging on our data in an attempt to reduce variance and increase accuracy. All that changed in this case was that we considered all predictors in each tree rather than a subset each time.   
+
+```{r, echo=FALSE}
+set.seed(3)
+#fit the bagged model; m=p
+bag.births<-randomForest(HL~.-DBWT,data=births.train2,
+                         mtry=12,importance=TRUE)
+bag.births
+```
+
+```{r, echo=FALSE}
+set.seed(3)
+plot(bag.births, main="Births using Bagging")
+legend("top", colnames(bag.births$err.rate),col=1:4,cex=0.8,fill=1:4)
+```
+
+```{r, include=FALSE}
+yhat.bag<-predict(bag.births, newdata=births.test2)
+
+#Confusion matrix
+bag.err <- table(pred = yhat.bag, truth = births.test2$HL)
+
+#test error rate
+test.bag.err <- 1 - sum(diag(bag.err))/sum(bag.err)
+```
+The test error rate for our bagged model was `r test.bag.err`, which is very similar to the OOB estimate of error rate.   
+
+### Boosting  
+
+While we tried to decrease the variance of our predictors with the bagging method, we next attempted to decrease the bias through boosting. It combines predictors to improve performance and since our predictors appeared to be similar levels of influence, we thought boosting might serve better than our previous methods.    
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(gbm)
+set.seed(3)
+
+boost <- births.train2[-c(3)]
+boost.births <- gbm(ifelse(HL=="Yes",1,0)~., data=boost,
+distribution="bernoulli", n.trees=500, interaction.depth=4)
+summary(boost.births, main="Variable Importance")
+```
+
+The most significant predictors in this case was delivery weight of the mother, which is consistent with our results from random forests.    
+
+We then investigated these variables further by plotting partial dependence plots for this variable. This plot illustrate the marginal effect of the selected variable on the response, after integrating out the other variables.    
+
+```{r, echo=FALSE}
+set.seed(3)
+plot(boost.births,i="DWgt_R", main="Partial Dependence of Delivery Weight")
+```
+
+The delivery weight plot revealed that when delivery weight of the mother was between about 120 and 300 pounds, it had the largest impact on our response. This is intuitive because it is not likely to successfully carry a child to term when not within or close to this weight range.   
+
+Overall we concluded that if the mother was in a healthy weight range, her child was more likely to be born a healthy weight.  
+
+```{r, include=FALSE}
+births.test.boost <- births.test2
+births.test.boost$HL <- ifelse(births.test.boost$HL=="Yes",1,0)
+  
+yhat.boost <- predict(boost.births, newdata = births.test.boost, n.trees=500, type="response")
+
+thresh <- sum(yhat.boost)/length(yhat.boost)
+yhat.boost <- ifelse(yhat.boost>=thresh,1,0)
+
+# Confusion matrix
+boost.err <- table(pred = yhat.boost, truth = births.test.boost$HL)
+
+#test error rate
+test.boost.err <- 1 - sum(diag(boost.err))/sum(boost.err)
+```
+
+To calculate the error rate, we calculated a threshold value by taking the average of the probabilities found using prediction on the boosted model and saying that for any probability of the boosted value greater than this threshold, the baby is a healthy weight, and otherwise it is an unhealthy weight. Our threshold ended up being `r thresh`.
+
+```{r, include=FALSE}
+test.boost.err
+test.bag.err
+test.rf.err
+```
+
+The test error for the...  
+random forest model was `r test.rf.err`.    
+bagging model was `r test.bag.err`.      
+boosting model was `r test.boost.err`.      
+
+We got the lowest test error rate for the random forest model, which probably was because we had a complex data set and random forests help reduce variance (avoid overfitting).
+Bosting gave us the highest test error of these three algorithms. This was surprising at first because boosting tends to work well, as it builds models intelligently by giving more and more weight to observations that are hard to classify. When thinking about our data however, we already had a complex dataset that did not need the bias to be reduced as much as the variance. The test error was only greater than the random forest model by less than 0.1 however, so it wasn't that big of a difference.    
+
+# Conclusions 
+
+Based on our results, machine learning was not as effective as it could have been in predicting the birth weight of babies. All models that we fit in both ensemble and non-ensemble learning did not perform very well, as indicated by the relatively high testing rates. We therefore drew different conclusions from each of these analyses, like variable importance and response variability. We were not able to come to a consistent conclusion regarding which attributes most strongly affect baby weight.
+
+That being said, some models performed better than others.  
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+table.total <- matrix(c("KNN 2",  test.error.knn2, 
+                  "KNN 5",  test.error.knn5, 
+                  "KNN 10", test.error.knn10, 
+                  "KNN Best K", test.error4,
+                  "Logistic Regression", lr.error,
+                  "Random Forests", test.rf.err,
+                  "Bagging", test.bag.err,
+                  "Boosting", test.boost.err),
+                   ncol=2,byrow=TRUE)
+colnames(table.total) <- c("Model", "Testing MSE")
+rownames(table.total) <- c(1:8)
+table.total2 <- as.table(table.total)
+library(knitr)
+kable(table.total2, caption="Table of Test Error Rates")
+```
+
+The model that fit our data the best was K-Nearest Neighbors with K=`r numneighbor`, because it classified between healthy and unhealthy babies most accurately. This was surprising because we did not suspect KNN to perform well, as KNN tends to work best on smaller data-sets that do not have many features. We also had to remove several columns to be able to use this algorithm since we had so many cateogrical attributes. Random forests were a close second, which is probably because of the algorithm's variance reduction techniques.     
+
+Logistic regression was our least-effective model fit. This may be because our data was not linearly separable, and that is when logistic regression performs well.  
+
+Ensemble methods revealed that BMI and delivery weight of the mother were the most significant predictors for baby weight. Weight demographics of the mother had more of an impact on healthy baby weight than external impacts. We had hypothesized that things like smoking cigarettes and number of trips to the doctor would heavily affect our response, but it turned out to actually be internal health of the mother. Logistic regression on the other hand deemed that most predictors were important and we did not draw consistent conclusions about variable importance on baby weight.   
+
+# Study Limitations  
+
+One thing that may have contributed to our sometimes poor model performance was the fact that we changed so many continuous variables to be binary. At the time we believed this was beneficial for future analysis because it was intuitive for certain variables. However, for a method like KNN, having categorical predictors negatively impacted our findings because we had to remove these variables from the model altogether.  
+
+Another limitation of our project was that the data only came from the United States, and the United States is infamous for having high obesity rates. This could help explain why BMI and delivery weight of the mother were such influential predictors in some models. 
+
+We also struggled with our dataset because of the extremely high number of predictors. There was no great way to narrow this down at the beginning besides intuition, and we could've potentially removed important variables. The sheer amount of observations was also hard to work with, as things were not running efficiently on our low performance computers.  
+
+# Future Research Directions  
+
+Since none of our models were as effective as they could have been, there are a few things we could do to extend this project or improve the results. We could have left our numeric variables as is rather than changing them to binary to see if that would result in distinctly significant variabes. Unsupervised learning methods could also be implemented, such as clustering. This could help reveal new patterns that we did not see with our supervised methods, and our models would also be less complex, potentially giving us a lower variance. One could also try changing the definiton of what healthy and unhealthy weights are. We based this range off of the values of the quantiles, but our data could have been biased since it did not take any other years besides 2018 into consideration. The cutoffs for underweight could be determined in a different way, such as using a national average. It would be interesting to see the results of leaving birth weight as a numeric variable rather than a binary factor response as well.  
+
+# References
+Amol Deshmukh. (2019; November). US Births (2018), Version 2. Retrieved February 22, 2020 from https://www.kaggle.com/des137/us-births-2018.  
+
+# Appendix
+```{r, eval=FALSE}
+#read in the data
+births1 <- read.csv("US_births.csv")
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+#crop data set
+birthIDs <- sample(1:nrow(births1), 0.01*nrow(births1))
+myBirths<- births1[birthIDs, ]
+dim(myBirths)
+
+#get rid of columns that are not meaningful 
+myBirths<- myBirths[-c(17:19)]
+myBirths<-myBirths[-c(1:2)]
+myBirths<-myBirths[-c(6:10)]
+myBirths<-myBirths[-c(23:27)]
+myBirths<-myBirths[-c(27:28,31:33)]
+myBirths<-myBirths[-c(4:5,7:8,10:20)]
+myBirths<-myBirths[-c(10,15:18)]
+myBirths<-myBirths[-c(5:6)]
+```  
+
+```{r,eval=FALSE}
+dim(births1)
+dim(myBirths)
+any(is.na(myBirths))
+``` 
+
+```{r, eval=FALSE, warning=FALSE}
+#Create a copy of the dataset so we can manipulate variables
+births <- myBirths
+
+#convert some variables to binary 
+births$SEX<-ifelse(births$SEX=='M',0,1)
+births$MM_AICU<-ifelse(births$MM_AICU=='N',0,1)
+births$CIG_0<-ifelse(births$CIG_0==0, 0, 1)
+births$NO_INFEC<-ifelse(births$NO_INFEC==0, 0, 1)
+births$NO_RISKS<-ifelse(births$NO_RISKS==0, 0, 1)
+
+#PRECARE: change 99 to 0
+for(i in 1:nrow(births)){
+  if (births$PRECARE[i]==99){
+  (births$PRECARE[i]=0)
+  }
+}
+
+library(dplyr)
+births <- births %>%
+mutate(HL=as.factor(ifelse(DBWT>=2960, "Yes", "No"))) 
+```
+
+```{r, eval=FALSE}
+glimpse(births)
+```
+
+```{r, eval=FALSE}
+#pairs plot
+pairs(births)
+````
+
+```{r, eval=FALSE}
+#summary statistics
+summary(births)
+```
+
+```{r, eval=FALSE}
+#histograms
+par(mfrow=c(3,3))
+
+hist(`births`$BMI)
+hist(`births`$DWgt_R)
+hist(`births`$M_Ht_In)
+hist(`births`$PRECARE)
+hist(`births`$PREVIS)
+hist(`births`$PWgt_R)
+hist(`births`$WTGAIN)
+```
+
+```{r, eval=FALSE}
+#boxplots
+births.boxplot <- births[-c(3)]
+boxplot(`births.boxplot`, main="Boxplots for all Variables")
+```
+
+```{r, eval=FALSE}
+par(mfrow=c(1,4))
+
+boxplot(DWgt_R ~ HL, data = births.boxplot, ylab="Delivery Weight of Mother (pounds)",
+xlab="Healthy Baby Weight", main = "Delivery Weight")
+
+boxplot(BMI ~ HL, data = births.boxplot, ylab="BMI of Mother",
+xlab="Healthy Baby Weight", main = "BMI")
+
+boxplot(M_Ht_In ~ HL, data = births.boxplot, ylab="Mother’s height (in inches)",
+xlab="Healthy Baby Weight", main = "Mother’s Height")
+
+boxplot(PRECARE ~ HL, data = births.boxplot, ylab="Month in pregnancy prenatal care began",
+xlab="Healthy Baby Weight", main = "Prenatal Care")
+
+par(mfrow=c(1,3))
+boxplot(PREVIS ~ HL, data = births.boxplot, ylab="Number of Prenatal visits",
+xlab="Healthy Baby Weight", main = "Prenatal visits")
+
+boxplot(PWgt_R ~ HL, data = births.boxplot, ylab="Pre-Pregnancy Weight of Mother (pounds)",
+xlab="Healthy Baby Weight", main = "Pre-Pregnancy Weight")
+
+boxplot(WTGAIN ~ HL, data = births.boxplot, ylab="Weight gained by mother during pregnancy (in pounds)",
+xlab="Healthy Baby Weight", main = "Weight Gain")
+```
+
+```{r, eval=FALSE, warning=FALSE}
+#Load libraries required for KNN
+library(ISLR)
+library(ggplot2)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(class)
+```
+
+```{r, eval=FALSE}
+#remove categorical variables 
+knn.births <- births %>%
+  select(-DBWT, -MM_AICU, -CIG_0, -SEX, -NO_INFEC, -NO_RISKS)
+
+colnames(knn.births)
+```
+
+```{r, eval=FALSE}
+#create train and test sets for KNN for dataset without categorical variables
+set.seed(3)
+train <- sample(1:nrow(knn.births), .75*nrow(knn.births))
+knn.train <- knn.births[train,]
+knn.test <- knn.births[-train,]
+
+#view dimensions of testing and training sets
+dim(knn.train)
+dim(knn.test)
+```
+
+```{r, eval=FALSE}
+#YTrain are observed labels for HL on training set
+YTrain <- knn.train$HL
+XTrain <- knn.train %>% select(-HL)
+
+#XTrain is design matrix
+XTrain <- scale(XTrain, center= TRUE, scale= TRUE)
+```
+
+```{r,eval=FALSE}
+#Create meanvec and sdvec to make YTest and XTest
+meanvec <- attr(XTrain, 'scaled:center')
+sdvec <- attr(XTrain, 'scaled:scale')
+YTest <- knn.test$HL
+XTest <- knn.test %>% select(-HL) %>% scale(center= meanvec, scale= sdvec)
+```
+
+```{r,eval=FALSE}
+# k=2
+set.seed(3)
+
+# Train classifier and make predictions on the TRAINING set (k=2)
+pred.YTrain2 <- knn(train=XTrain, test= XTrain, cl= YTrain, k=2)
+
+# Calculate the confusion matrix
+conf.train2 <- table(predicted= pred.YTrain2, observed= YTrain)
+conf.train2
+
+# Train accuarcy rate
+accuracy.train2 <- sum(diag(conf.train2)/sum(conf.train2))
+
+# Train error rate
+train.error.knn2 <- 1-accuracy.train2
+```
+
+```{r,eval=FALSE}
+#k=5
+set.seed(3)
+
+# Train classifier and make predictions on the TRAINING set (k=5)
+pred.YTrain5 <- knn(train=XTrain, test= XTrain, cl= YTrain, k=5)
+
+# Calculate the confusion matrix
+conf.train5 <- table(predicted= pred.YTrain5, observed= YTrain)
+
+# Train accuarcy rate
+accuracy.train5 <- sum(diag(conf.train5)/sum(conf.train5))
+
+# Train error rate
+train.error.knn5 <- 1-accuracy.train5
+```
+
+```{r,eval=FALSE}
+#k=10
+set.seed(3)
+
+# Train classifier and make predictions on the TRAINING set (k=10)
+pred.YTrain10= knn(train=XTrain, test= XTrain, cl= YTrain, k=10)
+
+# Calculate the confusion matrix
+conf.train10 <- table(predicted= pred.YTrain10, observed= YTrain)
+
+# Train accuarcy rate
+accuracy.train10 <- sum(diag(conf.train10)/sum(conf.train10))
+
+# Train error rate
+train.error.knn10 <- 1-accuracy.train10
+```
+
+```{r, eval=FALSE}
+#k=2
+set.seed(3)
+
+# train the classifier on TRAINING set and make predictions on the TEST set
+pred.YTest2 <- knn(train= XTrain, test= XTest, cl= YTrain, k=2)
+
+# Confusion Matrix
+conf.test2 <- table(predicted= pred.YTest2, observed= YTest)
+
+# Test accuracy rate 
+accuracy.test2 <- sum(diag(conf.test2)/sum(conf.test2))
+
+# Test error rate
+test.error.knn2 <- 1-accuracy.test2
+```
+
+```{r, eval=FALSE}
+#k=5
+set.seed(3)
+
+# train the classifier on TRAINING set and make predictions on the TEST set
+pred.YTest5 <- knn(train= XTrain, test= XTest, cl= YTrain, k=5)
+
+# Confusion Matrix
+conf.test5 <- table(predicted= pred.YTest5, observed= YTest)
+
+# Test accuracy rate 
+accuracy.test5 <- sum(diag(conf.test5)/sum(conf.test5))
+
+# Test error rate
+test.error.knn5 <- 1-accuracy.test5
+```
+
+```{r, eval=FALSE}
+#k=10
+set.seed(3)
+
+# train the classifier on TRAINING set and make predictions on the TEST set
+pred.YTest10 <- knn(train= XTrain, test= XTest, cl= YTrain, k=10)
+
+# Confusion Matrix
+conf.test10 <- table(predicted= pred.YTest10, observed= YTest)
+
+# Test accuracy rate 
+accuracy.test10 <- sum(diag(conf.test10)/sum(conf.test10))
+
+# Test error rate
+test.error.knn10 <- 1-accuracy.test10
+```
+
+```{r, eval=FALSE}
+validation.error <- NULL
+allK <- 1:50
+set.seed(3)
+
+# for each number in allK, use LOOCV to find a validation error
+for (i in allK){
+  pred.Yval <- knn.cv(train= XTrain, cl= YTrain, k=i) # predict on the left-out validation set
+  validation.error <- c(validation.error, mean(pred.Yval!=YTrain))
+}
+
+#Best number of neighbors (if there is a tie, use larger number of neighbors for a simpler model)
+numneighbor <- max(allK[validation.error == min(validation.error)])
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+# using best k
+
+#TRAINING error
+pred.YTrain41 <- knn(train=XTrain, test= XTrain, cl= YTrain, k=numneighbor)
+# confusion matrix
+conf.train41 <- table(predicted= pred.YTrain41, true= YTrain)
+# test accuracy rate
+accuracy.train41 <- sum(diag(conf.train41)/sum(conf.train41))
+# Test error rate
+train.error41 <- 1-accuracy.train41
+
+
+#TESTING error
+pred.YTest41 <- knn(train=XTrain, test= XTest, cl= YTrain, k=numneighbor)
+# confusion matrix
+conf.test41 <- table(predicted= pred.YTest41, true= YTest)
+# test accuracy rate
+accuracy.test41 <- sum(diag(conf.test41)/sum(conf.test41))
+# Test error rate
+test.error41 <- 1-accuracy.test41
+```
+
+```{r, eval=FALSE}
+table <- matrix(c("2", train.error.knn2, test.error.knn2, 
+                  "5", train.error.knn5, test.error.knn5, 
+                  "10", train.error.knn10, test.error.knn10, 
+                  numneighbor, train.error41, test.error41),
+                  ncol=3,byrow=TRUE)
+colnames(table) <- c("Number of Neighbors","Training MSE","Testing MSE")
+rownames(table) <- c(1:4)
+table2 <- as.table(table)
+library(knitr)
+kable(table2, caption="Table of MSEs for Train and Test Sets")
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+#convert binary variables to factors
+births.lr <- births
+births.lr$MM_AICU <- as.factor(births.lr$MM_AICU)
+births.lr$SEX<-as.factor(ifelse(births$SEX==0,"F","M"))
+
+#create testing and training sets 
+trainID<-sample(1:nrow(births.lr),.75*nrow(births.lr))
+births.train.lr<-births.lr[trainID,]
+births.test.lr<-births.lr[-trainID,]
+```
+
+```{r, eval=FALSE}
+#install.packages("ROCR")
+library(ROCR)
+set.seed(3)
+
+#fit logistic regression model; make family=binomial
+glm.fit <- glm(HL~. -DBWT, data= births.train.lr, family= binomial)
+
+# summarize the model
+summary(glm.fit)
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+# estimated healthy/unhealthy weight probabilities
+prob.training <- predict(glm.fit, type= "response")
+round(prob.training, digits=2)
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+# First arument is the prob.training, second is true labels
+lr.pred <- prediction(prob.training, births.train.lr$HL)
+
+# We want TPR on the y axis and FPR on the x axis
+perf <- performance(lr.pred, measure="tpr", x.measure="fpr")
+
+# Lastly, plot the object you obtained above, and you will have the ROC curve
+plot(perf, col=2, lwd=3, main="ROC curve")
+abline(0,1)
+```
+
+```{r, eval=FALSE}
+# Calculate AUC
+auc <- performance(lr.pred, "auc")@y.values
+```
+
+```{r, eval=FALSE}
+# Next to determine the best threshold value
+# FPR
+fpr <- performance(lr.pred, "fpr")@y.values[[1]]
+cutoff <- performance(lr.pred, "fpr")@x.values[[1]]
+
+# FNR
+fnr <- performance(lr.pred,"fnr")@y.values[[1]]
+
+# Plot
+matplot(cutoff, cbind(fpr,fnr), type="l",lwd=2, xlab="Threshold",ylab="Error Rate")
+# Add legend to the plot
+legend(0.3, 1, legend=c("False Positive Rate","False Negative Rate"),
+col=c(1,2), lty=c(1,2))
+```
+
+```{r, eval=FALSE}
+# Calculate the euclidean distance between FPR and FNR
+rate <- as.data.frame(cbind(Cutoff=cutoff, FPR=fpr, FNR=fnr))
+rate$distance <- sqrt((rate[,2])^2+(rate[,3])^2)
+
+# Select p-threshold with the smallest euclidean distance
+index <- which.min(rate$distance)
+best <- rate$Cutoff[index]
+
+# Graph of selected p-threshold
+matplot(cutoff, cbind(fpr,fnr), type="l",lwd=2, xlab="Threshold",ylab="Error Rate")
+# Add legend to the plot
+legend(0.35, 1, legend=c("False Positive Rate","False Negative Rate"),
+col=c(1,2), lty=c(1,2))
+# Add the best value
+abline(v=best, col=3, lty=3, lwd=3)
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+births.train.lr <- births.train.lr %>%
+  mutate(predHL= as.factor(ifelse(prob.training<= best, "No", "Yes")))
+
+# Confusion Matrix (training error/accuracy)
+lr.conf.matrix <- table(pred=births.train.lr$predHL, true=births.train.lr$HL)
+lr.conf.matrix
+
+#accuracy rate
+lr.accuracy <- sum(diag(lr.conf.matrix ))/sum(lr.conf.matrix)
+
+#error rate
+lr.error <- 1-lr.accuracy
+
+#total calssified correctly
+total <- ((12614+4284)/(4284+8685+2928+12614))*100
+
+#unhealthy classified correctly
+unhealthy <- ((4284)/(4284+2928))*100
+  
+#healthy classified correctly
+healthy <- (12614/(8685+12614))*100
+```
+
+```{r, eval=FALSE}
+library(randomForest)
+set.seed(3)
+#create testing and training sets 
+trainID<-sample(1:nrow(births),.75*nrow(births))
+births.train2<-births[trainID,]
+births.test2<-births[-trainID,]
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+#fit the forest with m=sqrt(p) 
+fitrf<-randomForest(HL~.-DBWT, data=births.train2,mtry=sqrt(12),ntree=500,importance=TRUE)
+fitrf
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+plot(fitrf, main="Random Forests for Births")
+legend("topright", colnames(fitrf$err.rate),col=1:4,cex=0.8,fill=1:4)
+```
+
+```{r, eval=FALSE}
+#fit on test set
+yhat.rf <- predict(fitrf, newdata = births.test2)
+
+# Confusion matrix
+rf.err <- table(pred = yhat.rf, truth = births.test2$HL)
+
+#test error rate
+test.rf.err <- 1 - sum(diag(rf.err))/sum(rf.err)
+```
+
+```{r, eval=FALSE}
+importance(fitrf)
+varImpPlot(fitrf, main= "Variable Importance for Births Random Forest")
+#varImpPlot(fitrf, sort=T, main="Top 5 Variable Importance for Births Random Forest", n.var=5)
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+#fit the bagged model; m=p
+bag.births<-randomForest(HL~.-DBWT,data=births.train2,
+                         mtry=12,importance=TRUE)
+bag.births
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+plot(bag.births, main="Births using Bagging")
+legend("top", colnames(bag.births$err.rate),col=1:4,cex=0.8,fill=1:4)
+```
+
+```{r, eval=FALSE}
+yhat.bag<-predict(bag.births, newdata=births.test2)
+
+#Confusion matrix
+bag.err <- table(pred = yhat.bag, truth = births.test2$HL)
+
+#test error rate
+test.bag.err <- 1 - sum(diag(bag.err))/sum(bag.err)
+```
+
+```{r, eval=FALSE, message=FALSE}
+library(gbm)
+set.seed(3)
+
+boost <- births.train2[-c(3)]
+boost.births <- gbm(ifelse(HL=="Yes",1,0)~., data=boost,
+distribution="bernoulli", n.trees=500, interaction.depth=4)
+summary(boost.births, main="Variable Importance")
+```
+
+```{r, eval=FALSE}
+set.seed(3)
+plot(boost.births,i="DWgt_R", main="Partial Dependence of Delivery Weight")
+```
+
+```{r, eval=FALSE}
+births.test.boost <- births.test2
+births.test.boost$HL <- ifelse(births.test.boost$HL=="Yes",1,0)
+  
+yhat.boost <- predict(boost.births, newdata = births.test.boost, n.trees=500, type="response")
+
+thresh <- sum(yhat.boost)/length(yhat.boost)
+yhat.boost <- ifelse(yhat.boost>=thresh,1,0)
+
+# Confusion matrix
+boost.err <- table(pred = yhat.boost, truth = births.test.boost$HL)
+
+#test error rate
+test.boost.err <- 1 - sum(diag(boost.err))/sum(boost.err)
+```
+
+```{r, eval=FALSE}
+test.boost.err
+test.bag.err
+test.rf.err
+```
+
+```{r, eval=FALSE}
+table.total <- matrix(c("KNN 2",  test.error.knn2, 
+                  "KNN 5",  test.error.knn5, 
+                  "KNN 10", test.error.knn10, 
+                  "KNN 49", test.error41,
+                  "Logistic Regression", lr.error,
+                  "Random Forests", test.rf.err,
+                  "Bagging", test.bag.err,
+                  "Boosting", test.boost.err),
+                   ncol=2,byrow=TRUE)
+colnames(table.total) <- c("Model", "Testing MSE")
+rownames(table.total) <- c(1:8)
+table.total2 <- as.table(table.total)
+library(knitr)
+kable(table.total2, caption="Table of Test Error Rates")
+```
+
